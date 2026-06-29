@@ -25,7 +25,22 @@ function App() {
   }
 
   const handleAnalyze = async () => {
-    if (files.length === 0 || !companyName.trim()) return
+    // 严格验证
+    if (!companyName.trim()) {
+      setError('请输入企业名称')
+      return
+    }
+    if (files.length === 0) {
+      setError('请上传PDF文件')
+      return
+    }
+    
+    // 验证文件类型
+    const invalidFiles = files.filter(f => f.type !== 'application/pdf')
+    if (invalidFiles.length > 0) {
+      setError('仅支持PDF文件格式')
+      return
+    }
 
     setIsAnalyzing(true)
     setError(null)
@@ -40,14 +55,17 @@ function App() {
       setReportFile(result)
       setHistory(prev => [{
         id: Date.now(),
-        files: files.map(f => f.name),
+        files: files.map(f => ({ name: f.name, size: f.size })),
         companyName: companyName,
         timestamp: new Date().toLocaleString('zh-CN'),
         reportFile: result
       }, ...prev].slice(0, 10))
 
     } catch (err) {
+      console.error('Analysis error:', err)
       setError(err.message || '分析过程中发生错误，请重试')
+      // 出错时重置workflowData
+      setWorkflowData(null)
     } finally {
       setIsAnalyzing(false)
     }
@@ -62,7 +80,11 @@ function App() {
   }
 
   const handleLoadHistory = (historyItem) => {
-    setReportFile(historyItem.reportFile)
+    if (historyItem.reportFile) {
+      setReportFile(historyItem.reportFile)
+      setError(null)
+      setWorkflowData(null)
+    }
   }
 
   return (
@@ -80,13 +102,14 @@ function App() {
           {/* Error Alert */}
           {error && (
             <div className="mb-6 p-4 rounded-xl bg-red-900/20 border border-red-500/30 text-red-300 flex items-center gap-3 animate-fade-in">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <span>{error}</span>
               <button 
                 onClick={() => setError(null)}
-                className="ml-auto hover:text-red-100"
+                className="ml-auto hover:text-red-100 flex-shrink-0"
+                aria-label="关闭错误"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

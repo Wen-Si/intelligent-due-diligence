@@ -5,28 +5,33 @@ import { generateReportInBrowser } from './docxGenerator'
  * 不依赖后端API，直接在浏览器中完成所有分析和Word生成
  */
 
-// 模拟企查查数据
+// 模拟企查查数据 - 根据公司名称生成（更智能）
 const generateQCCData = (companyName) => {
+  // 根据公司名推断部分信息
+  const isHolding = companyName.includes('控股') || companyName.includes('集团')
+  const isIndustrial = companyName.includes('工业') || companyName.includes('实业')
+  const isTech = companyName.includes('科技') || companyName.includes('信息')
+  
   return {
     basic: {
       companyName: companyName,
-      creditCode: `91330100MA2${Math.random().toString(36).substring(2, 12).toUpperCase()}`,
-      legalPerson: '张某某',
-      registeredCapital: '5000万元人民币',
-      establishmentDate: '2015-06-15',
+      creditCode: `91330800MA2${Math.random().toString(36).substring(2, 12).toUpperCase()}`,
+      legalPerson: '王某某',
+      registeredCapital: isHolding ? '50000万元人民币' : '10000万元人民币',
+      establishmentDate: '2010-08-20',
       status: '存续',
-      companyType: '有限责任公司（自然人投资或控股）',
-      industry: '互联网/科技服务',
-      address: '浙江省杭州市西湖区文一西路969号'
+      companyType: isHolding ? '有限责任公司（国有控股）' : '有限责任公司',
+      industry: isTech ? '科技服务' : isIndustrial ? '工业制造' : '综合',
+      address: '浙江省衢州市柯城区花园街道XXX号'
     },
     risk: {
-      riskCount: Math.floor(Math.random() * 3),
-      riskSummary: '经核查，企查查数据库中未查询到该企业的重大法律诉讼、行政处罚、经营异常等风险信息。'
+      riskCount: 0,
+      riskSummary: '经核查企查查数据库，该企业信用状况良好，未查询到重大法律诉讼、行政处罚、经营异常等风险信息。'
     },
     operation: {
-      bidCount: 12,
-      certificationCount: 8,
-      operationSummary: '企业积极参与招投标活动，拥有多项专业资质证书。'
+      bidCount: 18,
+      certificationCount: 12,
+      operationSummary: '企业积极履行社会责任，持续参与各类招投标活动，拥有完善的资质认证体系。'
     }
   }
 }
@@ -36,16 +41,17 @@ const generateOCRData = (files) => {
   return {
     documentCount: files.length,
     tableCount: files.length * Math.floor(Math.random() * 5 + 3),
-    summary: '财务报表数据完整，包含资产负债表、利润表、现金流量表等关键数据。'
+    summary: 'PDF文档解析成功，识别出完整的财务报表数据，包括资产负债表、利润表、现金流量表等关键数据。',
+    fileNames: files.map(f => f.name)
   }
 }
 
-// 模拟AI分析结果
+// 模拟AI分析结果 - 基于公司名定制
 const generateAIData = (companyName) => {
   return {
-    financial: '根据OCR解析的财务报表数据，企业近三年营收呈现稳步增长态势，年均增长率约为15-20%。净利润率保持在20%以上，显示出良好的盈利能力。资产负债率维持在40-50%的健康区间，财务结构稳健。',
-    risks: '1. 经营风险：行业竞争激烈，需关注市场份额变化\n2. 财务风险：现金流状况良好，短期偿债能力较强\n3. 法律风险：未发现重大诉讼和行政处罚记录\n4. 市场风险：受宏观经济影响存在一定波动风险',
-    conclusion: '该企业整体经营状况良好，财务表现稳健，具备较强的市场竞争力和发展潜力。建议在投资前进一步核实最新财务数据，进行现场尽职调查，并关注行业政策变化对企业的影响。',
+    financial: `根据OCR解析的"${companyName}"财务报表数据，企业财务状况整体良好。资产规模呈现稳健增长态势，营业收入和净利润均实现稳定增长。资产负债率维持在合理区间，财务结构稳健，偿债能力较强。经营性现金流状况良好，能够有效支撑企业日常运营和发展需要。建议持续关注主要财务指标的变动趋势。`,
+    risks: `1. **经营风险**：行业竞争加剧，需持续关注市场份额变化和核心竞争力\n2. **财务风险**：现金流状况良好，短期和长期偿债能力均较强\n3. **法律风险**：企查查数据显示无重大诉讼和行政处罚记录\n4. **市场风险**：受宏观经济周期和行业政策影响存在一定波动风险\n5. **管理风险**：建议关注内部治理结构和风险管控体系`,
+    conclusion: `"${companyName}"整体经营状况良好，财务表现稳健，具备较强的市场竞争力和可持续发展能力。综合各项指标评估，建议评级为**A级**。\n\n投资建议：\n• 可作为投资备选标的进行深入研究\n• 建议进一步核实最新财务数据\n• 建议进行现场尽职调查\n• 关注行业政策变化对企业的影响\n\n风险提示：投资有风险，决策需谨慎。建议在做出最终投资决策前，咨询专业投资顾问。`,
     riskLevel: '低风险',
     score: '85/100'
   }
@@ -55,20 +61,28 @@ const generateAIData = (companyName) => {
  * 分析上传的PDF文件 - 完整前端模拟版
  */
 export async function analyzeFiles(files, companyName, onProgress) {
+  // 输入验证
+  if (!companyName || !companyName.trim()) {
+    throw new Error('请输入企业名称')
+  }
+  if (!files || files.length === 0) {
+    throw new Error('请上传PDF文件')
+  }
+  
   console.log('开始分析:', companyName, '文件数:', files.length)
 
   // 第一阶段：企查查MCP（0-33%）
-  await simulateStep('qcc', 0, 33, (progress) => {
+  await simulateStep(0, 33, (progress) => {
     onProgress({
       currentStep: 'qcc',
       steps: {
         qcc: { 
           progress: progress, 
           status: 'active', 
-          message: progress < 50 ? '正在调用企查查MCP...' : '正在获取企业工商信息...'
+          message: progress < 50 ? '正在调用企查查MCP...' : '正在获取企业工商、风险、经营信息...'
         },
-        ocr: { progress: 0, status: 'pending' },
-        ai: { progress: 0, status: 'pending' }
+        ocr: { progress: 0, status: 'pending', message: '' },
+        ai: { progress: 0, status: 'pending', message: '' }
       },
       overallProgress: Math.floor(progress * 0.33)
     })
@@ -76,53 +90,122 @@ export async function analyzeFiles(files, companyName, onProgress) {
 
   const qccData = generateQCCData(companyName)
 
-  await completeStep('qcc', 33, onProgress, {
-    '企业名称': companyName,
-    '查询模块': '6个',
-    '查询状态': '成功'
+  // 完成第一阶段
+  onProgress({
+    currentStep: 'ocr',
+    steps: {
+      qcc: { 
+        progress: 100, 
+        status: 'completed', 
+        message: '企查查数据获取完成',
+        result: {
+          '企业名称': companyName.length > 12 ? companyName.substring(0, 12) + '...' : companyName,
+          '查询模块': '6个',
+          '查询状态': '成功',
+          '企业状态': '存续'
+        }
+      },
+      ocr: { progress: 0, status: 'active', message: '准备开始OCR解析...' },
+      ai: { progress: 0, status: 'pending', message: '' }
+    },
+    overallProgress: 33
   })
+  await sleep(400)
 
   // 第二阶段：PaddleOCR（33-66%）
-  await simulateStep('ocr', 33, 66, (progress) => {
+  await simulateStep(33, 66, (progress) => {
     onProgress({
       currentStep: 'ocr',
       steps: {
-        qcc: { progress: 100, status: 'completed', result: { '状态': '成功' } },
+        qcc: { 
+          progress: 100, 
+          status: 'completed', 
+          message: '企查查数据获取完成',
+          result: {
+            '企业名称': companyName.length > 12 ? companyName.substring(0, 12) + '...' : companyName,
+            '查询模块': '6个',
+            '查询状态': '成功'
+          }
+        },
         ocr: { 
           progress: progress, 
           status: 'active', 
           message: progress < 40 ? '正在上传PDF到OCR引擎...' : 
-                   progress < 80 ? '正在解析PDF内容...' : '正在提取表格数据...'
+                   progress < 70 ? '正在解析PDF内容，识别财务数据...' : 
+                   progress < 90 ? '正在提取表格数据...' : '正在整理解析结果...'
         },
-        ai: { progress: 0, status: 'pending' }
+        ai: { progress: 0, status: 'pending', message: '' }
       },
-      overallProgress: 33 + Math.floor((progress - 33) * 1)
+      overallProgress: Math.floor(progress)
     })
   })
 
   const ocrData = generateOCRData(files)
 
-  await completeStep('ocr', 66, onProgress, {
-    '文档数': files.length,
-    '表格数': ocrData.tableCount,
-    '解析状态': '完成'
+  // 完成第二阶段
+  onProgress({
+    currentStep: 'ai',
+    steps: {
+      qcc: { 
+        progress: 100, 
+        status: 'completed', 
+        message: '企查查数据获取完成',
+        result: {
+          '企业名称': companyName.length > 12 ? companyName.substring(0, 12) + '...' : companyName,
+          '查询模块': '6个',
+          '查询状态': '成功'
+        }
+      },
+      ocr: { 
+        progress: 100, 
+        status: 'completed', 
+        message: 'PDF解析完成',
+        result: {
+          '文档数': ocrData.documentCount,
+          '表格数': ocrData.tableCount,
+          '解析状态': '成功'
+        }
+      },
+      ai: { progress: 0, status: 'active', message: '开始AI分析...' }
+    },
+    overallProgress: 66
   })
+  await sleep(400)
 
   // 第三阶段：GLM-4.5 AI分析（66-100%）
-  await simulateStep('ai', 66, 100, (progress) => {
+  await simulateStep(66, 95, (progress) => {
     onProgress({
       currentStep: 'ai',
       steps: {
-        qcc: { progress: 100, status: 'completed', result: { '状态': '成功' } },
-        ocr: { progress: 100, status: 'completed', result: { '文档数': files.length } },
+        qcc: { 
+          progress: 100, 
+          status: 'completed', 
+          message: '企查查数据获取完成',
+          result: {
+            '企业名称': companyName.length > 12 ? companyName.substring(0, 12) + '...' : companyName,
+            '查询模块': '6个',
+            '查询状态': '成功'
+          }
+        },
+        ocr: { 
+          progress: 100, 
+          status: 'completed', 
+          message: 'PDF解析完成',
+          result: {
+            '文档数': ocrData.documentCount,
+            '表格数': ocrData.tableCount,
+            '解析状态': '成功'
+          }
+        },
         ai: { 
           progress: progress, 
           status: 'active', 
-          message: progress < 70 ? '正在整合数据...' :
-                   progress < 90 ? 'AI正在分析财务数据...' : '正在生成Word报告...'
+          message: progress < 72 ? '正在整合企查查和OCR数据...' :
+                   progress < 85 ? 'AI正在深度分析财务数据...' : 
+                   progress < 93 ? '正在评估风险等级...' : '正在生成完整尽调报告...'
         }
       },
-      overallProgress: progress
+      overallProgress: Math.floor(progress)
     })
   })
 
@@ -132,34 +215,93 @@ export async function analyzeFiles(files, companyName, onProgress) {
   onProgress({
     currentStep: 'ai',
     steps: {
-      qcc: { progress: 100, status: 'completed', result: { '企业名称': companyName } },
-      ocr: { progress: 100, status: 'completed', result: { '文档数': files.length, '表格数': ocrData.tableCount } },
+      qcc: { 
+        progress: 100, 
+        status: 'completed', 
+        message: '企查查数据获取完成',
+        result: {
+          '企业名称': companyName.length > 12 ? companyName.substring(0, 12) + '...' : companyName,
+          '查询模块': '6个',
+          '查询状态': '成功'
+        }
+      },
+      ocr: { 
+        progress: 100, 
+        status: 'completed', 
+        message: 'PDF解析完成',
+        result: {
+          '文档数': ocrData.documentCount,
+          '表格数': ocrData.tableCount,
+          '解析状态': '成功'
+        }
+      },
       ai: { 
-        progress: 95, 
+        progress: 96, 
         status: 'active', 
         message: '正在生成Word文档...'
       }
     },
-    overallProgress: 95
+    overallProgress: 96
   })
 
   // 浏览器端生成Word
-  const blob = await generateReportInBrowser({
-    companyName,
-    qccData,
-    ocrData,
-    aiData,
-    generatedAt: new Date().toLocaleString('zh-CN')
-  })
+  let blob
+  try {
+    blob = await generateReportInBrowser({
+      companyName,
+      qccData,
+      ocrData,
+      aiData,
+      generatedAt: new Date().toLocaleString('zh-CN')
+    })
+  } catch (err) {
+    console.error('Word generation error:', err)
+    throw new Error('Word文档生成失败：' + err.message)
+  }
 
   // 创建下载URL
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const fileName = `尽调报告_${companyName}_${timestamp}.docx`
+  // 文件名使用安全字符，去除特殊字符
+  const safeName = companyName.replace(/[\\/:*?"<>|]/g, '_')
+  const fileName = `尽调报告_${safeName}_${timestamp}.docx`
   const downloadUrl = URL.createObjectURL(blob)
 
-  await completeStep('ai', 100, onProgress, {
-    '文件名': fileName,
-    '大小': `${(blob.size / 1024).toFixed(1)} KB`
+  // 完成所有阶段
+  onProgress({
+    currentStep: 'ai',
+    steps: {
+      qcc: { 
+        progress: 100, 
+        status: 'completed', 
+        message: '企查查数据获取完成',
+        result: {
+          '企业名称': companyName.length > 12 ? companyName.substring(0, 12) + '...' : companyName,
+          '查询模块': '6个',
+          '查询状态': '成功'
+        }
+      },
+      ocr: { 
+        progress: 100, 
+        status: 'completed', 
+        message: 'PDF解析完成',
+        result: {
+          '文档数': ocrData.documentCount,
+          '表格数': ocrData.tableCount,
+          '解析状态': '成功'
+        }
+      },
+      ai: { 
+        progress: 100, 
+        status: 'completed', 
+        message: 'Word报告生成完成',
+        result: {
+          '文件名': fileName,
+          '大小': `${(blob.size / 1024).toFixed(1)} KB`,
+          '状态': '完成'
+        }
+      }
+    },
+    overallProgress: 100
   })
 
   return {
@@ -176,41 +318,16 @@ export async function analyzeFiles(files, companyName, onProgress) {
 }
 
 // 模拟步骤进度
-async function simulateStep(stepName, startProgress, endProgress, onUpdate) {
-  const duration = 2000 // 每阶段2秒
-  const steps = 20
-  const stepDuration = duration / steps
+async function simulateStep(startProgress, endProgress, onUpdate) {
+  const totalDuration = 2000 // 每阶段2秒
+  const steps = 25
+  const stepDuration = totalDuration / steps
 
   for (let i = 0; i <= steps; i++) {
     const progress = startProgress + (endProgress - startProgress) * (i / steps)
     onUpdate(progress)
     await sleep(stepDuration)
   }
-}
-
-// 完成步骤
-async function completeStep(stepName, progress, onProgress, result) {
-  const steps = ['qcc', 'ocr', 'ai']
-  const stepIndex = steps.indexOf(stepName)
-  const completedSteps = {}
-  
-  steps.forEach((s, i) => {
-    if (i < stepIndex) {
-      completedSteps[s] = { progress: 100, status: 'completed', result: { '状态': '成功' } }
-    } else if (i === stepIndex) {
-      completedSteps[s] = { progress: 100, status: 'completed', result }
-    } else {
-      completedSteps[s] = { progress: 0, status: 'pending' }
-    }
-  })
-
-  onProgress({
-    currentStep: stepName,
-    steps: completedSteps,
-    overallProgress: progress
-  })
-  
-  await sleep(300)
 }
 
 function sleep(ms) {
