@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY}
+      - PADDLEOCR_ACCESS_TOKEN=${PADDLEOCR_ACCESS_TOKEN}
+      - PADDLEOCR_MCP_MODEL=PaddleOCR-VL-1.6
+      - PADDLEOCR_MCP_PPOCR_SOURCE=aistudio
+    volumes:
+      - ./uploads:/app/uploads
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  uploads:
