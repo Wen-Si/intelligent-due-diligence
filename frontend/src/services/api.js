@@ -3,7 +3,7 @@
  * 整合企查查MCP + PaddleOCR + GLM-4.5 三个数据源
  * 所有调用在浏览器端完成（GitHub Pages 静态部署）
  */
-import { queryCompanyFullInfo } from './qccClient'
+import { queryCompanyFullInfo, getQCCCallStatus } from './qccClient'
 import { extractTextFromPDF } from './pdfParser'
 import { callGLM45 } from './glmService'
 import { generateReportFromMarkdown } from './docxGenerator'
@@ -211,9 +211,31 @@ export async function analyzeFiles(files, companyName, onProgress) {
   // 实际调用GLM-4.5-Flash
   // 系统提示词：企业尽调专家 + 尽调报告撰写要求
   // 用户提示词：企查查MCP数据 + OCR解析的财务报表（字符串形式）
+  
+  // 构建数据获取状态，传递给GLM
+  const qccStatus = getQCCCallStatus()
+  const dataStatus = {
+    qccSuccess: qccStatus.successCount > 0,
+    qccSuccessCount: qccStatus.successCount,
+    qccTotalTools: qccStatus.totalToolsCalled,
+    qccFailCount: qccStatus.failCount,
+    ocrSuccess: ocrText.length > 100,
+    ocrLength: ocrText.length,
+    pdfCount: files.length,
+    totalPages: totalPages
+  }
+  
+  console.log('======= 传递给GLM的数据状态 =======')
+  console.log(JSON.stringify(dataStatus, null, 2))
+  console.log('企查查数据 basic.companyName:', qccData?.basic?.companyName)
+  console.log('企查查数据 basic.creditCode:', qccData?.basic?.creditCode)
+  console.log('OCR文本前200字:', ocrText.substring(0, 200))
+  console.log('OCR文本总长度:', ocrText.length)
+  console.log('==================================')
+
   let aiResult
   try {
-    aiResult = await callGLM45(trimmedName, qccData, ocrText)
+    aiResult = await callGLM45(trimmedName, qccData, ocrText, dataStatus)
   } catch (err) {
     console.error('GLM-4.5调用失败:', err)
     throw new Error('AI生成报告失败: ' + err.message)
@@ -321,7 +343,19 @@ function buildQCCSummary(qccData) {
   if (qccData?.basic?.creditCode && qccData.basic.creditCode !== '—') {
     summary['信用代码'] = qccData.basic.creditCode
   }
+  if (qccData?.basic?.legalPerson && qccData.basic.legalPerson !== '—') {
+    summary['法定代表人'] = qccData.basic.legalPerson
+  }
+  if (qccData?.basic?.registeredCapital && qccData.basic.registeredCapital !== '—') {
+    summary['注册资本'] = qccData.basic.registeredCapital
+  }
   summary['查询模块'] = '6个MCP接口'
+  if (qccData?.shareholders) {
+    summary['股东数'] = `${qccData.shareholders.length} 个`
+  }
+  if (qccData?.executives) {
+    summary['高管数'] = `${qccData.executives.length} 人`
+  }
   if (qccData?.risk) {
     summary['风险数'] = `${qccData.risk.riskCount || 0} 条`
   }
@@ -331,10 +365,9 @@ function buildQCCSummary(qccData) {
   if (qccData?.ipr) {
     summary['知识产权'] = `商标${qccData.ipr.trademarkCount || 0}/专利${qccData.ipr.patentCount || 0}`
   }
-  if (qccData?.shareholders) {
-    summary['股东数'] = `${qccData.shareholders.length} 个`
-  }
-  summary['查询状态'] = '成功'
+  // 判断数据是否真实获取
+  const hasRealData = qccData?.basic?.creditCode && qccData.basic.creditCode !== '—'
+  summary['查询状态'] = hasRealData ? '成功（真实数据）' : '部分成功'
   return summary
 }
 
