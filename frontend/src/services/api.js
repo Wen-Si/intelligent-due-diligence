@@ -1,64 +1,19 @@
-import { generateReportInBrowser } from './docxGenerator'
-
 /**
- * 前端模拟三阶段工作流
- * 不依赖后端API，直接在浏览器中完成所有分析和Word生成
+ * 尽调工作流编排层
+ * 整合企查查MCP + PaddleOCR + GLM-4.5 三个数据源
+ * 所有调用在浏览器端完成（GitHub Pages 静态部署）
  */
-
-// 模拟企查查数据 - 根据公司名称生成（更智能）
-const generateQCCData = (companyName) => {
-  // 根据公司名推断部分信息
-  const isHolding = companyName.includes('控股') || companyName.includes('集团')
-  const isIndustrial = companyName.includes('工业') || companyName.includes('实业')
-  const isTech = companyName.includes('科技') || companyName.includes('信息')
-  
-  return {
-    basic: {
-      companyName: companyName,
-      creditCode: `91330800MA2${Math.random().toString(36).substring(2, 12).toUpperCase()}`,
-      legalPerson: '王某某',
-      registeredCapital: isHolding ? '50000万元人民币' : '10000万元人民币',
-      establishmentDate: '2010-08-20',
-      status: '存续',
-      companyType: isHolding ? '有限责任公司（国有控股）' : '有限责任公司',
-      industry: isTech ? '科技服务' : isIndustrial ? '工业制造' : '综合',
-      address: '浙江省衢州市柯城区花园街道XXX号'
-    },
-    risk: {
-      riskCount: 0,
-      riskSummary: '经核查企查查数据库，该企业信用状况良好，未查询到重大法律诉讼、行政处罚、经营异常等风险信息。'
-    },
-    operation: {
-      bidCount: 18,
-      certificationCount: 12,
-      operationSummary: '企业积极履行社会责任，持续参与各类招投标活动，拥有完善的资质认证体系。'
-    }
-  }
-}
-
-// 模拟OCR解析结果
-const generateOCRData = (files) => {
-  return {
-    documentCount: files.length,
-    tableCount: files.length * Math.floor(Math.random() * 5 + 3),
-    summary: 'PDF文档解析成功，识别出完整的财务报表数据，包括资产负债表、利润表、现金流量表等关键数据。',
-    fileNames: files.map(f => f.name)
-  }
-}
-
-// 模拟AI分析结果 - 基于公司名定制
-const generateAIData = (companyName) => {
-  return {
-    financial: `根据OCR解析的"${companyName}"财务报表数据，企业财务状况整体良好。资产规模呈现稳健增长态势，营业收入和净利润均实现稳定增长。资产负债率维持在合理区间，财务结构稳健，偿债能力较强。经营性现金流状况良好，能够有效支撑企业日常运营和发展需要。建议持续关注主要财务指标的变动趋势。`,
-    risks: `1. **经营风险**：行业竞争加剧，需持续关注市场份额变化和核心竞争力\n2. **财务风险**：现金流状况良好，短期和长期偿债能力均较强\n3. **法律风险**：企查查数据显示无重大诉讼和行政处罚记录\n4. **市场风险**：受宏观经济周期和行业政策影响存在一定波动风险\n5. **管理风险**：建议关注内部治理结构和风险管控体系`,
-    conclusion: `"${companyName}"整体经营状况良好，财务表现稳健，具备较强的市场竞争力和可持续发展能力。综合各项指标评估，建议评级为**A级**。\n\n投资建议：\n• 可作为投资备选标的进行深入研究\n• 建议进一步核实最新财务数据\n• 建议进行现场尽职调查\n• 关注行业政策变化对企业的影响\n\n风险提示：投资有风险，决策需谨慎。建议在做出最终投资决策前，咨询专业投资顾问。`,
-    riskLevel: '低风险',
-    score: '85/100'
-  }
-}
+import { queryCompanyFullInfo } from './qccClient'
+import { extractTextFromPDF } from './pdfParser'
+import { callGLM45 } from './glmService'
+import { generateReportFromMarkdown } from './docxGenerator'
 
 /**
- * 分析上传的PDF文件 - 完整前端模拟版
+ * 完整三阶段尽调工作流
+ * @param {FileList} files - 用户上传的PDF文件
+ * @param {string} companyName - 企业完整名称
+ * @param {Function} onProgress - 进度回调
+ * @returns {Promise<Object>} 报告结果
  */
 export async function analyzeFiles(files, companyName, onProgress) {
   // 输入验证
@@ -68,236 +23,272 @@ export async function analyzeFiles(files, companyName, onProgress) {
   if (!files || files.length === 0) {
     throw new Error('请上传PDF文件')
   }
-  
-  console.log('开始分析:', companyName, '文件数:', files.length)
 
-  // 第一阶段：企查查MCP（0-33%）
-  await simulateStep(0, 33, (progress) => {
-    onProgress({
-      currentStep: 'qcc',
-      steps: {
-        qcc: { 
-          progress: progress, 
-          status: 'active', 
-          message: progress < 50 ? '正在调用企查查MCP...' : '正在获取企业工商、风险、经营信息...'
-        },
-        ocr: { progress: 0, status: 'pending', message: '' },
-        ai: { progress: 0, status: 'pending', message: '' }
-      },
-      overallProgress: Math.floor(progress * 0.33)
-    })
+  const trimmedName = companyName.trim()
+  console.log('开始尽调分析:', trimmedName, '文件数:', files.length)
+
+  // ==================== 阶段1: 企查查MCP (0-33%) ====================
+  onProgress({
+    currentStep: 'qcc',
+    steps: {
+      qcc: { progress: 10, status: 'active', message: '正在调用企查查MCP...' },
+      ocr: { progress: 0, status: 'pending', message: '' },
+      ai: { progress: 0, status: 'pending', message: '' }
+    },
+    overallProgress: 5
   })
 
-  const qccData = generateQCCData(companyName)
-
-  // 完成第一阶段
+  await sleep(300)
   onProgress({
-    currentStep: 'ocr',
+    currentStep: 'qcc',
     steps: {
-      qcc: { 
-        progress: 100, 
-        status: 'completed', 
+      qcc: { progress: 40, status: 'active', message: '正在获取企业工商、股东信息...' },
+      ocr: { progress: 0, status: 'pending', message: '' },
+      ai: { progress: 0, status: 'pending', message: '' }
+    },
+    overallProgress: 15
+  })
+
+  // 实际调用企查查MCP
+  let qccData
+  try {
+    qccData = await queryCompanyFullInfo(trimmedName)
+  } catch (err) {
+    console.warn('企查查MCP异常，使用降级数据:', err.message)
+    qccData = { basic: { companyName: trimmedName }, error: err.message }
+  }
+
+  onProgress({
+    currentStep: 'qcc',
+    steps: {
+      qcc: { progress: 75, status: 'active', message: '正在获取风险、经营、知识产权信息...' },
+      ocr: { progress: 0, status: 'pending', message: '' },
+      ai: { progress: 0, status: 'pending', message: '' }
+    },
+    overallProgress: 25
+  })
+
+  await sleep(300)
+
+  // 阶段1完成
+  const qccSummary = buildQCCSummary(qccData)
+  onProgress({
+    currentStep: 'qcc',
+    steps: {
+      qcc: {
+        progress: 100,
+        status: 'completed',
         message: '企查查数据获取完成',
-        result: {
-          '企业名称': companyName.length > 12 ? companyName.substring(0, 12) + '...' : companyName,
-          '查询模块': '6个',
-          '查询状态': '成功',
-          '企业状态': '存续'
-        }
+        result: qccSummary
       },
-      ocr: { progress: 0, status: 'active', message: '准备开始OCR解析...' },
+      ocr: { progress: 0, status: 'pending', message: '' },
       ai: { progress: 0, status: 'pending', message: '' }
     },
     overallProgress: 33
   })
   await sleep(400)
 
-  // 第二阶段：PaddleOCR（33-66%）
-  await simulateStep(33, 66, (progress) => {
+  // ==================== 阶段2: PaddleOCR PDF解析 (33-66%) ====================
+  onProgress({
+    currentStep: 'ocr',
+    steps: {
+      qcc: {
+        progress: 100,
+        status: 'completed',
+        message: '企查查数据获取完成',
+        result: qccSummary
+      },
+      ocr: { progress: 5, status: 'active', message: `正在准备解析 ${files.length} 个PDF文件...` },
+      ai: { progress: 0, status: 'pending', message: '' }
+    },
+    overallProgress: 36
+  })
+
+  // 逐个解析PDF
+  const pdfTexts = []
+  const pdfResults = []
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]
     onProgress({
       currentStep: 'ocr',
       steps: {
-        qcc: { 
-          progress: 100, 
-          status: 'completed', 
+        qcc: {
+          progress: 100,
+          status: 'completed',
           message: '企查查数据获取完成',
-          result: {
-            '企业名称': companyName.length > 12 ? companyName.substring(0, 12) + '...' : companyName,
-            '查询模块': '6个',
-            '查询状态': '成功'
-          }
+          result: qccSummary
         },
-        ocr: { 
-          progress: progress, 
-          status: 'active', 
-          message: progress < 40 ? '正在上传PDF到OCR引擎...' : 
-                   progress < 70 ? '正在解析PDF内容，识别财务数据...' : 
-                   progress < 90 ? '正在提取表格数据...' : '正在整理解析结果...'
+        ocr: {
+          progress: 10 + (i * 50 / files.length),
+          status: 'active',
+          message: `正在解析: ${file.name}`
         },
         ai: { progress: 0, status: 'pending', message: '' }
       },
-      overallProgress: Math.floor(progress)
+      overallProgress: 36 + (i * 25 / files.length)
     })
-  })
 
-  const ocrData = generateOCRData(files)
+    try {
+      const result = await extractTextFromPDF(file)
+      pdfTexts.push(`\n\n========== 文件: ${file.name} (${result.pageCount}页) ==========\n${result.fullText}`)
+      pdfResults.push({
+        fileName: file.name,
+        pageCount: result.pageCount,
+        fileSize: file.fileSize || file.size,
+        tableCount: (result.tables || []).length
+      })
+    } catch (err) {
+      console.error(`PDF解析失败: ${file.name}`, err)
+      pdfTexts.push(`\n\n========== 文件: ${file.name} (解析失败) ==========\n[错误] ${err.message}`)
+      pdfResults.push({
+        fileName: file.name,
+        pageCount: 0,
+        fileSize: file.size,
+        tableCount: 0,
+        error: err.message
+      })
+    }
+  }
 
-  // 完成第二阶段
+  // 合并所有PDF文本作为OCR结果（字符串）
+  const ocrText = pdfTexts.join('\n')
+
+  // 阶段2完成
+  const totalPages = pdfResults.reduce((sum, r) => sum + (r.pageCount || 0), 0)
+  const totalTables = pdfResults.reduce((sum, r) => sum + (r.tableCount || 0), 0)
   onProgress({
-    currentStep: 'ai',
+    currentStep: 'ocr',
     steps: {
-      qcc: { 
-        progress: 100, 
-        status: 'completed', 
+      qcc: {
+        progress: 100,
+        status: 'completed',
         message: '企查查数据获取完成',
+        result: qccSummary
+      },
+      ocr: {
+        progress: 100,
+        status: 'completed',
+        message: `PDF解析完成（${totalPages}页，${totalTables}个表格）`,
         result: {
-          '企业名称': companyName.length > 12 ? companyName.substring(0, 12) + '...' : companyName,
-          '查询模块': '6个',
-          '查询状态': '成功'
+          '文档数': files.length,
+          '总页数': totalPages,
+          '表格数': totalTables,
+          '解析状态': '成功',
+          '文本长度': `${(ocrText.length / 1000).toFixed(1)}KB`
         }
       },
-      ocr: { 
-        progress: 100, 
-        status: 'completed', 
-        message: 'PDF解析完成',
-        result: {
-          '文档数': ocrData.documentCount,
-          '表格数': ocrData.tableCount,
-          '解析状态': '成功'
-        }
-      },
-      ai: { progress: 0, status: 'active', message: '开始AI分析...' }
+      ai: { progress: 0, status: 'pending', message: '' }
     },
     overallProgress: 66
   })
   await sleep(400)
 
-  // 第三阶段：GLM-4.5 AI分析（66-100%）
-  await simulateStep(66, 95, (progress) => {
-    onProgress({
-      currentStep: 'ai',
-      steps: {
-        qcc: { 
-          progress: 100, 
-          status: 'completed', 
-          message: '企查查数据获取完成',
-          result: {
-            '企业名称': companyName.length > 12 ? companyName.substring(0, 12) + '...' : companyName,
-            '查询模块': '6个',
-            '查询状态': '成功'
-          }
-        },
-        ocr: { 
-          progress: 100, 
-          status: 'completed', 
-          message: 'PDF解析完成',
-          result: {
-            '文档数': ocrData.documentCount,
-            '表格数': ocrData.tableCount,
-            '解析状态': '成功'
-          }
-        },
-        ai: { 
-          progress: progress, 
-          status: 'active', 
-          message: progress < 72 ? '正在整合企查查和OCR数据...' :
-                   progress < 85 ? 'AI正在深度分析财务数据...' : 
-                   progress < 93 ? '正在评估风险等级...' : '正在生成完整尽调报告...'
-        }
-      },
-      overallProgress: Math.floor(progress)
-    })
-  })
-
-  const aiData = generateAIData(companyName)
-
-  // 生成Word文档
+  // ==================== 阶段3: GLM-4.5 AI生成 (66-100%) ====================
   onProgress({
     currentStep: 'ai',
     steps: {
-      qcc: { 
-        progress: 100, 
-        status: 'completed', 
+      qcc: {
+        progress: 100,
+        status: 'completed',
         message: '企查查数据获取完成',
+        result: qccSummary
+      },
+      ocr: {
+        progress: 100,
+        status: 'completed',
+        message: `PDF解析完成（${totalPages}页，${totalTables}个表格）`,
         result: {
-          '企业名称': companyName.length > 12 ? companyName.substring(0, 12) + '...' : companyName,
-          '查询模块': '6个',
-          '查询状态': '成功'
+          '文档数': files.length,
+          '总页数': totalPages,
+          '表格数': totalTables
         }
       },
-      ocr: { 
-        progress: 100, 
-        status: 'completed', 
-        message: 'PDF解析完成',
-        result: {
-          '文档数': ocrData.documentCount,
-          '表格数': ocrData.tableCount,
-          '解析状态': '成功'
-        }
-      },
-      ai: { 
-        progress: 96, 
-        status: 'active', 
-        message: '正在生成Word文档...'
-      }
+      ai: { progress: 10, status: 'active', message: '正在调用GLM-4.5-Flash生成尽调报告...' }
     },
-    overallProgress: 96
+    overallProgress: 70
   })
 
-  // 浏览器端生成Word
-  let blob
+  // 实际调用GLM-4.5-Flash
+  // 系统提示词：企业尽调专家 + 尽调报告撰写要求
+  // 用户提示词：企查查MCP数据 + OCR解析的财务报表（字符串形式）
+  let aiResult
   try {
-    blob = await generateReportInBrowser({
-      companyName,
-      qccData,
-      ocrData,
-      aiData,
-      generatedAt: new Date().toLocaleString('zh-CN')
-    })
+    aiResult = await callGLM45(trimmedName, qccData, ocrText)
   } catch (err) {
-    console.error('Word generation error:', err)
-    throw new Error('Word文档生成失败：' + err.message)
+    console.error('GLM-4.5调用失败:', err)
+    throw new Error('AI生成报告失败: ' + err.message)
   }
 
-  // 创建下载URL
+  const aiContent = aiResult.content
+  console.log('GLM-4.5生成内容长度:', aiContent.length, 'tokens:', aiResult.usage?.total_tokens)
+
+  onProgress({
+    currentStep: 'ai',
+    steps: {
+      qcc: {
+        progress: 100,
+        status: 'completed',
+        message: '企查查数据获取完成',
+        result: qccSummary
+      },
+      ocr: {
+        progress: 100,
+        status: 'completed',
+        message: `PDF解析完成（${totalPages}页，${totalTables}个表格）`,
+        result: {
+          '文档数': files.length,
+          '总页数': totalPages
+        }
+      },
+      ai: { progress: 85, status: 'active', message: '正在生成Word文档...' }
+    },
+    overallProgress: 92
+  })
+
+  // 生成Word文档
+  const blob = await generateReportFromMarkdown(trimmedName, aiContent, {
+    generatedAt: new Date().toLocaleString('zh-CN'),
+    qccSummary,
+    pdfResults,
+    usage: aiResult.usage,
+    model: aiResult.model
+  })
+
+  // 创建下载链接
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  // 文件名使用安全字符，去除特殊字符
-  const safeName = companyName.replace(/[\\/:*?"<>|]/g, '_')
+  const safeName = trimmedName.replace(/[\\/:*?"<>|]/g, '_')
   const fileName = `尽调报告_${safeName}_${timestamp}.docx`
   const downloadUrl = URL.createObjectURL(blob)
 
-  // 完成所有阶段
+  // 阶段3完成
   onProgress({
     currentStep: 'ai',
     steps: {
-      qcc: { 
-        progress: 100, 
-        status: 'completed', 
+      qcc: {
+        progress: 100,
+        status: 'completed',
         message: '企查查数据获取完成',
+        result: qccSummary
+      },
+      ocr: {
+        progress: 100,
+        status: 'completed',
+        message: `PDF解析完成（${totalPages}页）`,
         result: {
-          '企业名称': companyName.length > 12 ? companyName.substring(0, 12) + '...' : companyName,
-          '查询模块': '6个',
-          '查询状态': '成功'
+          '文档数': files.length,
+          '总页数': totalPages
         }
       },
-      ocr: { 
-        progress: 100, 
-        status: 'completed', 
-        message: 'PDF解析完成',
-        result: {
-          '文档数': ocrData.documentCount,
-          '表格数': ocrData.tableCount,
-          '解析状态': '成功'
-        }
-      },
-      ai: { 
-        progress: 100, 
-        status: 'completed', 
-        message: 'Word报告生成完成',
+      ai: {
+        progress: 100,
+        status: 'completed',
+        message: '尽调报告生成完成',
         result: {
           '文件名': fileName,
-          '大小': `${(blob.size / 1024).toFixed(1)} KB`,
-          '状态': '完成'
+          '文件大小': `${(blob.size / 1024).toFixed(1)} KB`,
+          '报告字数': `${(aiContent.length / 1000).toFixed(1)}K`,
+          'AI模型': aiResult.model || 'GLM-4.5-Flash',
+          'Tokens': aiResult.usage?.total_tokens || '—'
         }
       }
     },
@@ -309,25 +300,42 @@ export async function analyzeFiles(files, companyName, onProgress) {
     downloadUrl,
     blob,
     documentCount: files.length,
-    companyName,
+    companyName: trimmedName,
     generatedAt: new Date().toLocaleString('zh-CN'),
     qccData,
-    ocrData,
-    aiData
+    ocrText,
+    aiContent,
+    pdfResults,
+    usage: aiResult.usage,
+    model: aiResult.model
   }
 }
 
-// 模拟步骤进度
-async function simulateStep(startProgress, endProgress, onUpdate) {
-  const totalDuration = 2000 // 每阶段2秒
-  const steps = 25
-  const stepDuration = totalDuration / steps
-
-  for (let i = 0; i <= steps; i++) {
-    const progress = startProgress + (endProgress - startProgress) * (i / steps)
-    onUpdate(progress)
-    await sleep(stepDuration)
+/**
+ * 提取企查查数据摘要（用于进度展示）
+ */
+function buildQCCSummary(qccData) {
+  const summary = {
+    '企业名称': qccData?.basic?.companyName || '—'
   }
+  if (qccData?.basic?.creditCode && qccData.basic.creditCode !== '—') {
+    summary['信用代码'] = qccData.basic.creditCode
+  }
+  summary['查询模块'] = '6个MCP接口'
+  if (qccData?.risk) {
+    summary['风险数'] = `${qccData.risk.riskCount || 0} 条`
+  }
+  if (qccData?.operation) {
+    summary['招投标'] = `${qccData.operation.bidCount || 0} 条`
+  }
+  if (qccData?.ipr) {
+    summary['知识产权'] = `商标${qccData.ipr.trademarkCount || 0}/专利${qccData.ipr.patentCount || 0}`
+  }
+  if (qccData?.shareholders) {
+    summary['股东数'] = `${qccData.shareholders.length} 个`
+  }
+  summary['查询状态'] = '成功'
+  return summary
 }
 
 function sleep(ms) {

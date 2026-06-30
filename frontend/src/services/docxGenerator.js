@@ -3,25 +3,19 @@ import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
         LevelFormat, PageBreak } from 'docx'
 
 /**
- * 浏览器端生成Word尽调报告
- * 在前端直接生成docx文件，无需后端
+ * 将Markdown格式的AI报告转换为Word文档
+ * @param {string} companyName - 企业名称
+ * @param {string} markdownContent - AI生成的Markdown报告
+ * @param {Object} metadata - 报告元数据
+ * @returns {Promise<Blob>} Word文档Blob
  */
-export async function generateReportInBrowser(data) {
-  const { companyName, qccData, ocrData, aiData, generatedAt } = data
-
-  // 创建企业信息表格
-  const infoTable = createInfoTable([
-    ['企业名称', qccData.basic.companyName || companyName],
-    ['统一社会信用代码', qccData.basic.creditCode || '—'],
-    ['法定代表人', qccData.basic.legalPerson || '—'],
-    ['注册资本', qccData.basic.registeredCapital || '—'],
-    ['成立日期', qccData.basic.establishmentDate || '—'],
-    ['企业类型', qccData.basic.companyType || '—'],
-    ['经营状态', qccData.basic.status || '—'],
-    ['所属行业', qccData.basic.industry || '—'],
-    ['注册地址', qccData.basic.address || '—'],
-  ])
-
+export async function generateReportFromMarkdown(companyName, markdownContent, metadata = {}) {
+  const generatedAt = metadata.generatedAt || new Date().toLocaleString('zh-CN')
+  
+  // 解析Markdown
+  const blocks = parseMarkdown(markdownContent)
+  
+  // 构建Word文档
   const doc = new Document({
     styles: {
       default: {
@@ -34,11 +28,14 @@ export async function generateReportInBrowser(data) {
       },
       paragraphStyles: [
         { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true,
-          run: { size: 36, bold: true, font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' } },
+          run: { size: 32, bold: true, font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' } },
           paragraph: { spacing: { before: 360, after: 240 }, outlineLevel: 0, keepNext: false, keepLines: false } },
         { id: 'Heading2', name: 'Heading 2', basedOn: 'Normal', next: 'Normal', quickFormat: true,
           run: { size: 28, bold: true, font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' } },
           paragraph: { spacing: { before: 240, after: 180 }, outlineLevel: 1, keepNext: false, keepLines: false } },
+        { id: 'Heading3', name: 'Heading 3', basedOn: 'Normal', next: 'Normal', quickFormat: true,
+          run: { size: 24, bold: true, font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' } },
+          paragraph: { spacing: { before: 180, after: 120 }, outlineLevel: 2, keepNext: false, keepLines: false } },
       ]
     },
     sections: [{
@@ -82,7 +79,14 @@ export async function generateReportInBrowser(data) {
         new Paragraph({
           alignment: AlignmentType.CENTER,
           children: [new TextRun({ 
-            text: '数据来源：企查查MCP + PaddleOCR-VL-1.6 + 智谱GLM-4.5-Flash', 
+            text: 'AI模型：智谱GLM-4.5-Flash', size: 18, color: '999999',
+            font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
+          })]
+        }),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [new TextRun({ 
+            text: '数据来源：企查查MCP + PaddleOCR-VL-1.6', 
             size: 18, color: '999999',
             font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
           })]
@@ -90,132 +94,32 @@ export async function generateReportInBrowser(data) {
         
         new Paragraph({ children: [new PageBreak()] }),
         
-        // 一、报告概要
-        new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun('一、报告概要')] }),
+        // AI生成的报告内容
+        ...blocks,
+        
+        // 免责声明页
+        new Paragraph({ children: [new PageBreak()] }),
+        new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun('免责声明')] }),
         new Paragraph({
           spacing: { before: 180 },
           children: [new TextRun({
-            text: `本尽职调查报告基于企查查企业信息、OCR解析的财务报表数据，以及AI大模型深度分析，全面评估企业"${companyName}"的财务状况、经营风险和投资价值。`,
-            size: 24,
-            font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
-          })]
-        }),
-        
-        // 二、企业基本信息
-        new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun('二、企业基本信息')] }),
-        new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun('2.1 工商注册信息')] }),
-        infoTable,
-        
-        new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun('2.2 风险信息')] }),
-        new Paragraph({
-          spacing: { before: 120 },
-          children: [new TextRun({
-            text: `风险数量：${qccData.risk.riskCount || 0}`,
-            size: 24, bold: true,
+            text: '本报告由AI系统基于企业工商信息（企查查MCP）和财务报表内容（OCR解析）自动生成，仅供参考，不构成投资建议。',
+            size: 24, color: '666666',
             font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
           })]
         }),
         new Paragraph({
           spacing: { before: 120 },
           children: [new TextRun({
-            text: qccData.risk.riskSummary || '经核查，企查查数据库中未查询到该企业的重大风险信息记录。',
-            size: 24,
-            font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
-          })]
-        }),
-        
-        // 三、财务数据分析
-        new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun('三、财务数据分析')] }),
-        new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun('3.1 PDF文档解析结果')] }),
-        new Paragraph({
-          spacing: { before: 120 },
-          children: [new TextRun({
-            text: `本次分析共处理 ${ocrData.documentCount} 个PDF文档，提取了 ${ocrData.tableCount} 个数据表格。`,
-            size: 24,
-            font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
-          })]
-        }),
-        new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun('3.2 财务状况分析')] }),
-        new Paragraph({
-          spacing: { before: 120 },
-          children: [new TextRun({
-            text: aiData.financial || '基于OCR解析的财务报表数据，企业整体财务状况良好。',
-            size: 24,
-            font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
-          })]
-        }),
-        
-        // 四、风险评估
-        new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun('四、风险评估')] }),
-        new Paragraph({
-          spacing: { before: 120 },
-          children: [new TextRun({
-            text: `风险等级：${aiData.riskLevel}`,
-            size: 24, bold: true,
+            text: '本报告中的信息和结论基于公开数据和AI模型分析，可能存在不准确或不完整的情况。投资决策应基于更全面的尽职调查和专业顾问意见。',
+            size: 24, color: '666666',
             font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
           })]
         }),
         new Paragraph({
           spacing: { before: 120 },
           children: [new TextRun({
-            text: aiData.risks || '综合评估企业经营状况，整体风险可控。',
-            size: 24,
-            font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
-          })]
-        }),
-        
-        // 五、结论与建议
-        new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun('五、结论与建议')] }),
-        new Paragraph({
-          spacing: { before: 120 },
-          children: [new TextRun({
-            text: `综合评分：${aiData.score}`,
-            size: 24, bold: true,
-            font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
-          })]
-        }),
-        new Paragraph({
-          spacing: { before: 120 },
-          children: [new TextRun({
-            text: aiData.conclusion || '建议在投资决策前进行更深入的尽职调查，包括现场访谈和详细财务数据验证。',
-            size: 24,
-            font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
-          })]
-        }),
-        
-        // 六、附录
-        new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun('六、附录')] }),
-        new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun('6.1 分析说明')] }),
-        new Paragraph({
-          spacing: { before: 120 },
-          children: [new TextRun({
-            text: '1. 企查查数据：通过企查查MCP接口获取的企业工商、风险、经营等信息',
-            size: 24,
-            font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
-          })]
-        }),
-        new Paragraph({
-          spacing: { before: 120 },
-          children: [new TextRun({
-            text: '2. OCR数据：通过PaddleOCR-VL-1.6从PDF文档中提取的财务数据和表格',
-            size: 24,
-            font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
-          })]
-        }),
-        new Paragraph({
-          spacing: { before: 120 },
-          children: [new TextRun({
-            text: '3. AI分析：基于智谱GLM-4.5-Flash大模型的深度分析和报告生成',
-            size: 24,
-            font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
-          })]
-        }),
-        
-        new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun('6.2 免责声明')] }),
-        new Paragraph({
-          spacing: { before: 120 },
-          children: [new TextRun({
-            text: '本报告由AI系统自动生成，仅供参考，不构成投资建议。投资决策应基于更全面的尽职调查和专业顾问意见。',
+            text: '使用本报告所产生的任何后果，本平台不承担任何责任。',
             size: 24, color: '666666',
             font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
           })]
@@ -223,48 +127,277 @@ export async function generateReportInBrowser(data) {
       ]
     }]
   })
-
-  // 生成blob并下载
-  const blob = await Packer.toBlob(doc)
-  return blob
+  
+  return await Packer.toBlob(doc)
 }
 
-function createInfoTable(rows) {
+/**
+ * 解析Markdown为docx块
+ */
+function parseMarkdown(markdown) {
+  if (!markdown) return []
+  
+  const lines = markdown.split('\n')
+  const blocks = []
+  let i = 0
+  
+  while (i < lines.length) {
+    const line = lines[i].trimEnd()
+    
+    // 空行
+    if (!line.trim()) {
+      i++
+      continue
+    }
+    
+    // 一级标题
+    if (line.match(/^#\s+/)) {
+      blocks.push(new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        children: [new TextRun({
+          text: line.replace(/^#\s*/, ''),
+          font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
+        })]
+      }))
+      i++
+      continue
+    }
+    
+    // 二级标题
+    if (line.match(/^##\s+/)) {
+      blocks.push(new Paragraph({
+        heading: HeadingLevel.HEADING_2,
+        children: [new TextRun({
+          text: line.replace(/^##\s*/, ''),
+          font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
+        })]
+      }))
+      i++
+      continue
+    }
+    
+    // 三级标题
+    if (line.match(/^###\s+/)) {
+      blocks.push(new Paragraph({
+        heading: HeadingLevel.HEADING_3,
+        children: [new TextRun({
+          text: line.replace(/^###\s*/, ''),
+          font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
+        })]
+      }))
+      i++
+      continue
+    }
+    
+    // 表格检测（简单Markdown表格）
+    if (line.match(/^\|.+\|$/)) {
+      const tableLines = []
+      while (i < lines.length && lines[i].match(/^\|.+\|$/)) {
+        tableLines.push(lines[i])
+        i++
+      }
+      
+      if (tableLines.length >= 2) {
+        const table = buildTable(tableLines)
+        if (table) blocks.push(table)
+        continue
+      }
+    }
+    
+    // 引用块
+    if (line.match(/^>\s+/)) {
+      const quoteLines = []
+      while (i < lines.length && lines[i].match(/^>\s+/)) {
+        quoteLines.push(lines[i].replace(/^>\s*/, ''))
+        i++
+      }
+      blocks.push(new Paragraph({
+        spacing: { before: 120, after: 120 },
+        indent: { left: 720 },
+        children: [new TextRun({
+          text: quoteLines.join(' '),
+          italics: true,
+          color: '555555',
+          size: 24,
+          font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
+        })]
+      }))
+      continue
+    }
+    
+    // 列表项
+    if (line.match(/^[-*]\s+/)) {
+      const listItems = []
+      while (i < lines.length && lines[i].match(/^[-*]\s+/)) {
+        listItems.push(lines[i].replace(/^[-*]\s+/, ''))
+        i++
+      }
+      
+      for (const item of listItems) {
+        blocks.push(new Paragraph({
+          spacing: { before: 60, after: 60 },
+          indent: { left: 480 },
+          children: parseInlineFormat('• ' + item)
+        }))
+      }
+      continue
+    }
+    
+    // 数字列表
+    if (line.match(/^\d+\.\s+/)) {
+      const listItems = []
+      while (i < lines.length && lines[i].match(/^\d+\.\s+/)) {
+        listItems.push(lines[i])
+        i++
+      }
+      
+      listItems.forEach((item, idx) => {
+        blocks.push(new Paragraph({
+          spacing: { before: 60, after: 60 },
+          indent: { left: 480 },
+          children: parseInlineFormat(`${idx + 1}. ${item.replace(/^\d+\.\s+/, '')}`)
+        }))
+      })
+      continue
+    }
+    
+    // 分隔线
+    if (line.match(/^---+$/)) {
+      blocks.push(new Paragraph({
+        spacing: { before: 240, after: 240 },
+        children: [new TextRun({ text: '— — — — — — — — — — — — — — — —', color: 'CCCCCC' })]
+      }))
+      i++
+      continue
+    }
+    
+    // 普通段落（处理内联格式）
+    blocks.push(new Paragraph({
+      spacing: { before: 120, after: 60 },
+      children: parseInlineFormat(line)
+    }))
+    i++
+  }
+  
+  return blocks
+}
+
+/**
+ * 解析内联格式（粗体、斜体、代码）
+ */
+function parseInlineFormat(text) {
+  const runs = []
+  
+  // 简化处理：用TextRun数组表达
+  // 处理 **bold** 内容
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g)
+  
+  for (const part of parts) {
+    if (!part) continue
+    
+    if (part.startsWith('**') && part.endsWith('**')) {
+      // 粗体
+      runs.push(new TextRun({
+        text: part.slice(2, -2),
+        bold: true,
+        size: 24,
+        font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
+      }))
+    } else if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+      // 斜体
+      runs.push(new TextRun({
+        text: part.slice(1, -1),
+        italics: true,
+        size: 24,
+        font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
+      }))
+    } else if (part.startsWith('`') && part.endsWith('`')) {
+      // 代码
+      runs.push(new TextRun({
+        text: part.slice(1, -1),
+        font: { ascii: 'Consolas', hAnsi: 'Consolas', eastAsia: 'Microsoft YaHei' },
+        size: 22,
+        shading: { fill: 'F5F5F5' }
+      }))
+    } else {
+      // 普通文本
+      runs.push(new TextRun({
+        text: part,
+        size: 24,
+        font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
+      }))
+    }
+  }
+  
+  return runs.length > 0 ? runs : [new TextRun({ text })]
+}
+
+/**
+ * 构建表格
+ */
+function buildTable(tableLines) {
+  if (tableLines.length < 2) return null
+  
+  // 第一行是表头，第二行是分隔符（--- | ---），之后是数据
+  const headerCells = tableLines[0].split('|').slice(1, -1).map(c => c.trim())
+  
+  // 跳过分隔符行
+  const dataRows = []
+  for (let i = 2; i < tableLines.length; i++) {
+    const cells = tableLines[i].split('|').slice(1, -1).map(c => c.trim())
+    if (cells.length === headerCells.length) {
+      dataRows.push(cells)
+    }
+  }
+  
+  if (headerCells.length === 0) return null
+  
   const border = { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' }
   const borders = { top: border, bottom: border, left: border, right: border }
   
+  const cellWidth = Math.floor(9000 / headerCells.length)
+  
+  const rows = [
+    // 表头
+    new TableRow({
+      cantSplit: true,
+      tableHeader: true,
+      children: headerCells.map(text => new TableCell({
+        borders,
+        width: { size: cellWidth, type: WidthType.DXA },
+        shading: { fill: 'D5E8F0', type: ShadingType.CLEAR },
+        margins: { top: 80, bottom: 80, left: 120, right: 120 },
+        children: [new Paragraph({
+          children: [new TextRun({
+            text,
+            bold: true,
+            size: 22,
+            font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
+          })]
+        })]
+      }))
+    }),
+    // 数据行
+    ...dataRows.map(cells => new TableRow({
+      cantSplit: true,
+      children: cells.map(text => new TableCell({
+        borders,
+        width: { size: cellWidth, type: WidthType.DXA },
+        margins: { top: 80, bottom: 80, left: 120, right: 120 },
+        children: [new Paragraph({
+          children: [new TextRun({
+            text,
+            size: 22,
+            font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
+          })]
+        })]
+      }))
+    }))
+  ]
+  
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    columnWidths: [3500, 6500],
-    rows: rows.map(([label, value]) => 
-      new TableRow({
-        cantSplit: true,
-        children: [
-          new TableCell({
-            borders,
-            width: { size: 3500, type: WidthType.DXA },
-            shading: { fill: 'F0F4F8', type: ShadingType.CLEAR },
-            margins: { top: 100, bottom: 100, left: 120, right: 120 },
-            children: [new Paragraph({
-              children: [new TextRun({
-                text: label, bold: true, size: 22,
-                font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
-              })]
-            })]
-          }),
-          new TableCell({
-            borders,
-            width: { size: 6500, type: WidthType.DXA },
-            margins: { top: 100, bottom: 100, left: 120, right: 120 },
-            children: [new Paragraph({
-              children: [new TextRun({
-                text: value, size: 22,
-                font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
-              })]
-            })]
-          })
-        ]
-      })
-    )
+    columnWidths: headerCells.map(() => cellWidth),
+    rows
   })
 }
