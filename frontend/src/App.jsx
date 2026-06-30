@@ -165,7 +165,7 @@ function App() {
               © 2024 智能尽调平台 | 专业财务分析解决方案
             </p>
             <p className="text-xs mt-2 text-dark-500">
-              Powered by 企查查MCP + PaddleOCR-VL-1.6 + 智谱GLM-4.5-Flash
+              Powered by 企查查MCP + GLM-4V视觉OCR + 智谱GLM-4.5-Flash
             </p>
           </div>
         </footer>

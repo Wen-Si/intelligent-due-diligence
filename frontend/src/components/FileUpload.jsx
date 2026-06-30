@@ -175,7 +175,7 @@ function FileUpload({ files, companyName, onCompanyNameChange, onFilesAdded, onR
           <div className="text-center p-3 rounded-lg bg-dark-800/30">
             <p className="text-2xl mb-2">🔍</p>
             <p className="text-sm font-semibold text-white">第二步</p>
-            <p className="text-xs text-dark-400">PaddleOCR解析PDF内容</p>
+            <p className="text-xs text-dark-400">GLM-4V视觉OCR解析PDF</p>
           </div>
           <div className="text-center p-3 rounded-lg bg-dark-800/30">
             <p className="text-2xl mb-2">🤖</p>

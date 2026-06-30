@@ -86,7 +86,7 @@ export async function generateReportFromMarkdown(companyName, markdownContent, m
         new Paragraph({
           alignment: AlignmentType.CENTER,
           children: [new TextRun({ 
-            text: '数据来源：企查查MCP + PaddleOCR-VL-1.6', 
+            text: '数据来源：企查查MCP + GLM-4V视觉OCR',
             size: 18, color: '999999',
             font: { ascii: 'Arial', hAnsi: 'Arial', eastAsia: 'Microsoft YaHei' }
           })]

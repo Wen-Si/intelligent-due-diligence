@@ -120,6 +120,7 @@ export function buildUserPrompt(companyName, qccData, ocrText, dataStatus = {}) 
   statusLines.push(`- 企查查数据获取：${dataStatus.qccSuccess ? `成功（${dataStatus.qccSuccessCount}/${dataStatus.qccTotalTools}个工具返回数据）` : '失败或部分失败'}`)
   statusLines.push(`- 企查查数据字符数：${qccText.length}`)
   statusLines.push(`- OCR财务报表解析：${ocrLength > 100 ? `成功（${ocrLength}字符）` : '数据不足或解析失败'}`)
+  statusLines.push(`- OCR解析方法：${dataStatus.ocrMethod || 'pdf.js + GLM-4V视觉OCR'}`)
   statusLines.push(`- OCR文本字符数：${ocrLength}`)
   statusLines.push(`- PDF文件数：${dataStatus.pdfCount || 0}`)
   statusLines.push(`- PDF总页数：${dataStatus.totalPages || 0}`)
@@ -142,7 +143,7 @@ ${qccText}
 
 ---
 
-## 📄 第二部分：财务报表内容（来自PaddleOCR-VL-1.6解析）
+## 📄 第二部分：财务报表内容（来自GLM-4V视觉OCR解析）
 
 ${ocrContent || '> ⚠️ OCR解析未获取到有效文本内容。请在财务分析部分如实说明"OCR解析数据缺失"，不得编造财务数据。'}
 

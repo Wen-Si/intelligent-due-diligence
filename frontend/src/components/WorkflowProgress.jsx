@@ -11,13 +11,13 @@ function WorkflowProgress({ workflowData }) {
 
   const stepLabels = {
     qcc: '企查查MCP',
-    ocr: 'PaddleOCR解析',
+    ocr: 'GLM-4V视觉OCR',
     ai: 'GLM-4.5生成'
   }
 
   const stepDescriptions = {
     qcc: '获取企业工商、风险、经营等信息',
-    ocr: '解析PDF文档，提取财务数据和表格',
+    ocr: 'GLM-4V识别PDF页面，提取财务数据',
     ai: '整合所有数据，生成完整尽调报告'
   }
 

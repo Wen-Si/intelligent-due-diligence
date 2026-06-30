@@ -48,7 +48,7 @@ function ReportDownload({ reportFile, companyName, onNewAnalysis }) {
               🏢 企查查MCP
             </span>
             <span className="px-3 py-1 rounded-full text-sm font-semibold bg-blue-500/20 text-blue-400 border border-blue-500/30">
-              📄 PaddleOCR
+              📄 GLM-4V OCR
             </span>
             <span className="px-3 py-1 rounded-full text-sm font-semibold bg-purple-500/20 text-purple-400 border border-purple-500/30">
               🤖 GLM-4.5

@@ -1,6 +1,6 @@
 /**
  * 尽调工作流编排层
- * 整合企查查MCP + PaddleOCR + GLM-4.5 三个数据源
+ * 整合企查查MCP + GLM-4V视觉OCR + GLM-4.5 三个数据源
  * 所有调用在浏览器端完成（GitHub Pages 静态部署）
  */
 import { queryCompanyFullInfo, getQCCCallStatus } from './qccClient'
@@ -88,7 +88,8 @@ export async function analyzeFiles(files, companyName, onProgress) {
   })
   await sleep(400)
 
-  // ==================== 阶段2: PaddleOCR PDF解析 (33-66%) ====================
+  // ==================== 阶段2: PDF解析 (33-66%) ====================
+  // 使用pdf.js + GLM-4V视觉OCR双模式解析
   onProgress({
     currentStep: 'ocr',
     steps: {
@@ -121,7 +122,7 @@ export async function analyzeFiles(files, companyName, onProgress) {
         ocr: {
           progress: 10 + (i * 50 / files.length),
           status: 'active',
-          message: `正在解析: ${file.name}`
+          message: `正在解析: ${file.name}（pdf.js文本提取中...）`
         },
         ai: { progress: 0, status: 'pending', message: '' }
       },
@@ -129,13 +130,40 @@ export async function analyzeFiles(files, companyName, onProgress) {
     })
 
     try {
-      const result = await extractTextFromPDF(file)
-      pdfTexts.push(`\n\n========== 文件: ${file.name} (${result.pageCount}页) ==========\n${result.fullText}`)
+      // 传入进度回调，实时更新视觉OCR进度
+      const result = await extractTextFromPDF(file, (pageNum, totalPages, method) => {
+        const msg = method === 'vision'
+          ? `GLM-4V视觉OCR: ${file.name} 第${pageNum}/${totalPages}页...`
+          : `pdf.js文本提取: ${file.name} 第${pageNum}/${totalPages}页...`
+        onProgress({
+          currentStep: 'ocr',
+          steps: {
+            qcc: {
+              progress: 100,
+              status: 'completed',
+              message: '企查查数据获取完成',
+              result: qccSummary
+            },
+            ocr: {
+              progress: 10 + (i * 50 / files.length) + (pageNum / totalPages) * (50 / files.length),
+              status: 'active',
+              message: msg
+            },
+            ai: { progress: 0, status: 'pending', message: '' }
+          },
+          overallProgress: 36 + (i * 25 / files.length) + (pageNum / totalPages) * (25 / files.length)
+        })
+      })
+      
+      console.log(`PDF解析结果: ${file.name}, 方法=${result.method}, 文本长度=${result.fullText.length}`)
+      pdfTexts.push(`\n\n========== 文件: ${file.name} (${result.pageCount}页, 解析方式: ${result.method}) ==========\n${result.fullText}`)
       pdfResults.push({
         fileName: file.name,
         pageCount: result.pageCount,
         fileSize: file.fileSize || file.size,
-        tableCount: (result.tables || []).length
+        tableCount: (result.tables || []).length,
+        method: result.method,
+        textLength: result.fullText.length
       })
     } catch (err) {
       console.error(`PDF解析失败: ${file.name}`, err)
@@ -151,11 +179,18 @@ export async function analyzeFiles(files, companyName, onProgress) {
   }
 
   // 合并所有PDF文本作为OCR结果（字符串）
-  const ocrText = pdfTexts.join('\n')
+  // 截断过长的文本以避免超过GLM的上下文窗口（保留前50000字符）
+  let ocrText = pdfTexts.join('\n')
+  const MAX_OCR_LENGTH = 50000
+  if (ocrText.length > MAX_OCR_LENGTH) {
+    console.warn(`OCR文本过长(${ocrText.length}字符)，截断到${MAX_OCR_LENGTH}字符`)
+    ocrText = ocrText.substring(0, MAX_OCR_LENGTH) + '\n\n[注: 文本已截断，仅保留前50K字符]'
+  }
 
   // 阶段2完成
   const totalPages = pdfResults.reduce((sum, r) => sum + (r.pageCount || 0), 0)
   const totalTables = pdfResults.reduce((sum, r) => sum + (r.tableCount || 0), 0)
+  const ocrMethods = pdfResults.map(r => r.method || 'unknown').filter((v, i, a) => a.indexOf(v) === i)
   onProgress({
     currentStep: 'ocr',
     steps: {
@@ -168,13 +203,14 @@ export async function analyzeFiles(files, companyName, onProgress) {
       ocr: {
         progress: 100,
         status: 'completed',
-        message: `PDF解析完成（${totalPages}页，${totalTables}个表格）`,
+        message: `PDF解析完成（${totalPages}页，${(ocrText.length / 1000).toFixed(1)}K字符，方法: ${ocrMethods.join('+')}）`,
         result: {
           '文档数': files.length,
           '总页数': totalPages,
           '表格数': totalTables,
-          '解析状态': '成功',
-          '文本长度': `${(ocrText.length / 1000).toFixed(1)}KB`
+          '解析方法': ocrMethods.join(' + '),
+          '文本长度': `${(ocrText.length / 1000).toFixed(1)}KB`,
+          '解析状态': '成功'
         }
       },
       ai: { progress: 0, status: 'pending', message: '' }
@@ -196,11 +232,12 @@ export async function analyzeFiles(files, companyName, onProgress) {
       ocr: {
         progress: 100,
         status: 'completed',
-        message: `PDF解析完成（${totalPages}页，${totalTables}个表格）`,
+        message: `PDF解析完成（${totalPages}页，${(ocrText.length / 1000).toFixed(1)}K字符）`,
         result: {
           '文档数': files.length,
           '总页数': totalPages,
-          '表格数': totalTables
+          '解析方法': ocrMethods.join(' + '),
+          '文本长度': `${(ocrText.length / 1000).toFixed(1)}KB`
         }
       },
       ai: { progress: 10, status: 'active', message: '正在调用GLM-4.5-Flash生成尽调报告...' }
@@ -221,6 +258,7 @@ export async function analyzeFiles(files, companyName, onProgress) {
     qccFailCount: qccStatus.failCount,
     ocrSuccess: ocrText.length > 100,
     ocrLength: ocrText.length,
+    ocrMethod: ocrMethods.join(' + '),
     pdfCount: files.length,
     totalPages: totalPages
   }
